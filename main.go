@@ -5,9 +5,11 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -23,9 +25,12 @@ func main() {
 	//ignored := []string{".git"}
 	fw_channel := make(chan FileWatcherEvent, 1)
 
+	signal_channel := make(chan os.Signal, 1)
+	signal.Notify(signal_channel, syscall.SIGINT, syscall.SIGTERM)
+
 	root := flag.String("root", "", "Root directory for starting hot reload server.")
 	build_args_str := flag.String("build", "", "Command for building the server.")
-	run_args_str := flag.String("run", "", "Command for running the server.")
+	run_args_str := flag.String("exec", "", "Command for running the server.")
 
 	flag.Parse()
 
@@ -110,20 +115,24 @@ func main() {
 					rebuild_pending = false
 					log.Println("Starting server rebuild.")
 					if run_cmd != nil && run_cmd.Process != nil {
-						run_cmd.Process.Kill()
+						syscall.Kill(-run_cmd.Process.Pid, syscall.SIGTERM)
+						time.Sleep(1 * time.Second)
+						syscall.Kill(-run_cmd.Process.Pid, syscall.SIGKILL)
 						run_cmd.Wait()
 					}
 					build_cmd := exec.Command(build_args[0], build_args[1:]...)
 					build_cmd.Dir = root_abs_path
 					build_ongoing = true
+					start := time.Now()
 					err := build_cmd.Run()
+					elapsed := time.Since(start)
 					build_ongoing = false
 					if err != nil {
 						log.Fatal("Error occured during server build: ", err)
 						break
 					}
 
-					log.Println("Finished rebuild in Xms.")
+					log.Printf("Finished rebuild in %d ms.", elapsed.Milliseconds())
 					log.Println("Starting server.")
 
 					run_cmd = exec.Command(run_args[0], run_args[1:]...)
@@ -143,7 +152,15 @@ func main() {
 					}
 				}
 			}
+		case <-signal_channel:
+			log.Println("Shutting down.")
+			if run_cmd != nil && run_cmd.Process != nil {
+				syscall.Kill(-run_cmd.Process.Pid, syscall.SIGTERM)
+				time.Sleep(1 * time.Second)
+				syscall.Kill(-run_cmd.Process.Pid, syscall.SIGKILL)
+				run_cmd.Wait()
+			}
+			os.Exit(0)
 		}
 	}
-
 }
