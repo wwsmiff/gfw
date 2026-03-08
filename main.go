@@ -19,6 +19,7 @@ type FileWatcherEvent = uint8
 
 const (
 	FileWatcherRebuild FileWatcherEvent = iota
+	FileWathcerDebounce
 )
 
 func main() {
@@ -41,6 +42,10 @@ func main() {
 	build_ongoing := false
 	rebuild_pending := false
 
+	debounce_delay := 200 * time.Millisecond
+	debounce_timer := time.NewTimer(debounce_delay)
+	watched := map[string]struct{}{}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
@@ -61,7 +66,7 @@ func main() {
 					return
 				}
 
-				if filepath.Base(event.Name) == "test" {
+				if filepath.Base(event.Name) == "testserver" {
 					continue
 				}
 
@@ -71,19 +76,31 @@ func main() {
 						continue
 					}
 					if fileinfo.IsDir() {
-						err = watcher.Add(event.Name)
+						err := watcher.Add(event.Name)
 						if err != nil {
 							return
 						}
+						watched[event.Name] = struct{}{}
 						log.Printf("Subdirectory: '%s' added to watcher.\n", event.Name)
 					}
 				}
 
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					select {
-					case fw_channel <- FileWatcherRebuild:
-					default:
+				if event.Op&fsnotify.Remove == fsnotify.Remove {
+					_, ok := watched[event.Name]
+					if ok {
+						watcher.Remove(event.Name)
+						log.Printf("Subdirectory: '%s' removed from watcher.\n", event.Name)
 					}
+				}
+
+				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0 {
+					if !debounce_timer.Stop() {
+						select {
+						case <-debounce_timer.C:
+						default:
+						}
+					}
+					debounce_timer.Reset(debounce_delay)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -104,6 +121,8 @@ func main() {
 	fw_channel <- FileWatcherRebuild
 	for {
 		select {
+		case <-debounce_timer.C:
+			fw_channel <- FileWatcherRebuild
 		case fw_event := <-fw_channel:
 			switch fw_event {
 			case FileWatcherRebuild:
@@ -145,6 +164,7 @@ func main() {
 					// TODO: replace X with actual time taken for a rebuild
 					if err := run_cmd.Start(); err != nil {
 						log.Fatal("Failed to run server: ", err)
+						continue
 					}
 
 					if !rebuild_pending {
