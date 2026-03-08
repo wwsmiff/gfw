@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -23,7 +24,7 @@ const (
 )
 
 func main() {
-	//ignored := []string{".git"}
+	ignored := []string{".git", ".gitignore", "build", "testserver"}
 	fw_channel := make(chan FileWatcherEvent, 1)
 
 	signal_channel := make(chan os.Signal, 1)
@@ -66,7 +67,7 @@ func main() {
 					return
 				}
 
-				if filepath.Base(event.Name) == "testserver" {
+				if slices.Contains(ignored, filepath.Base(event.Name)) {
 					continue
 				}
 
@@ -117,8 +118,6 @@ func main() {
 		Setpgid: true,
 	}
 
-	// process event and log
-	fw_channel <- FileWatcherRebuild
 	for {
 		select {
 		case <-debounce_timer.C:
