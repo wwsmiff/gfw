@@ -20,7 +20,6 @@ type FileWatcherEvent = uint8
 
 const (
 	FileWatcherRebuild FileWatcherEvent = iota
-	FileWathcerDebounce
 )
 
 func main() {
@@ -160,7 +159,6 @@ func main() {
 					}
 
 					build_ongoing = false
-					// TODO: replace X with actual time taken for a rebuild
 					if err := run_cmd.Start(); err != nil {
 						log.Fatal("Failed to run server: ", err)
 						continue
