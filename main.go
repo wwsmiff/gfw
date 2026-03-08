@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
@@ -18,12 +20,18 @@ const (
 )
 
 func main() {
-	root := "./tmp"
 	//ignored := []string{".git"}
 	fw_channel := make(chan FileWatcherEvent, 1)
-	root_abs_path, err := filepath.Abs(root)
-	build_args := []string{"go", "build", "."}
-	run_args := []string{"./test"}
+
+	root := flag.String("root", "", "Root directory for starting hot reload server.")
+	build_args_str := flag.String("build", "", "Command for building the server.")
+	run_args_str := flag.String("run", "", "Command for running the server.")
+
+	flag.Parse()
+
+	root_abs_path, err := filepath.Abs(*root)
+	build_args := strings.Split(*build_args_str, " ")
+	run_args := strings.Split(*run_args_str, " ")
 
 	build_ongoing := false
 	rebuild_pending := false
